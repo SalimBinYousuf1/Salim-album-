@@ -1,0 +1,7 @@
+{
+  "name": "Salim",
+  "description": "Premium Apple-inspired photo album and local media manager for Android.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
