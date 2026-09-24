@@ -68,7 +68,11 @@ fun AlbumsScreen(
             it.type == AlbumType.ALL || it.type == AlbumType.FAVORITES || it.type == AlbumType.USER_CREATED
         }
         val mediaTypeAlbums = albums.filter {
-            it.type == AlbumType.VIDEOS || it.type == AlbumType.SCREENSHOTS || it.type == AlbumType.PANORAMAS
+            it.type == AlbumType.VIDEOS || it.type == AlbumType.SCREENSHOTS || it.type == AlbumType.PANORAMAS ||
+                    it.type == AlbumType.SELFIES || it.type == AlbumType.BURSTS || it.type == AlbumType.RAW
+        }
+        val utilityAlbums = albums.filter {
+            it.type == AlbumType.RECENTLY_DELETED || it.type == AlbumType.HIDDEN
         }
         val folderAlbums = albums.filter {
             it.type == AlbumType.CAMERA || it.type == AlbumType.DOWNLOADS || it.type == AlbumType.LARGE_FILES || it.type == AlbumType.FOLDER
@@ -116,11 +120,27 @@ fun AlbumsScreen(
                 }
             }
 
-            // Utilities and Folders
+            // Utilities Section (Recently Deleted, Hidden)
+            if (utilityAlbums.isNotEmpty()) {
+                item(span = { GridItemSpan(2) }) {
+                    Text(
+                        text = "Utilities",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                    )
+                }
+
+                items(utilityAlbums, key = { it.id }) { album ->
+                    AlbumCard(album = album, onClick = { onAlbumClick(album) })
+                }
+            }
+
+            // Folders Section
             if (folderAlbums.isNotEmpty()) {
                 item(span = { GridItemSpan(2) }) {
                     Text(
-                        text = "Folders & Utilities",
+                        text = "Folders & Storage",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
@@ -170,6 +190,10 @@ fun AlbumCard(
                     imageVector = when (album.type) {
                         AlbumType.VIDEOS -> Icons.Outlined.Videocam
                         AlbumType.FAVORITES -> Icons.Outlined.FavoriteBorder
+                        AlbumType.RECENTLY_DELETED -> Icons.Outlined.Delete
+                        AlbumType.HIDDEN -> Icons.Outlined.Lock
+                        AlbumType.SCREENSHOTS -> Icons.Outlined.Screenshot
+                        AlbumType.PANORAMAS -> Icons.Outlined.PanoramaHorizontal
                         else -> Icons.Outlined.PhotoAlbum
                     },
                     contentDescription = null,

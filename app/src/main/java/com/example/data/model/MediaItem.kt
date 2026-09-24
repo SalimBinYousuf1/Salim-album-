@@ -18,7 +18,9 @@ data class MediaItem(
     val bucketId: String = "",
     val bucketDisplayName: String = "",
     val path: String = "",
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val isHidden: Boolean = false,
+    val trashedAt: Long? = null
 ) {
     val isPanorama: Boolean
         get() = width > 0 && height > 0 && (width.toFloat() / height.toFloat() >= 2.5f || height.toFloat() / width.toFloat() >= 2.5f)
@@ -37,6 +39,17 @@ data class MediaItem(
         get() = bucketDisplayName.contains("screenshot", ignoreCase = true) ||
                 displayName.contains("screenshot", ignoreCase = true) ||
                 path.contains("screenshot", ignoreCase = true)
+
+    val isSelfie: Boolean
+        get() = displayName.contains("selfie", ignoreCase = true) ||
+                path.contains("front", ignoreCase = true) ||
+                path.contains("selfie", ignoreCase = true)
+
+    val daysRemainingInTrash: Int
+        get() = trashedAt?.let {
+            val elapsedDays = ((System.currentTimeMillis() - it) / (1000L * 60 * 60 * 24)).toInt()
+            (30 - elapsedDays).coerceAtLeast(0)
+        } ?: 30
 
     val formattedDuration: String
         get() {
@@ -78,7 +91,12 @@ enum class AlbumType {
     LARGE_FILES,
     PANORAMAS,
     FOLDER,
-    USER_CREATED
+    USER_CREATED,
+    RECENTLY_DELETED,
+    HIDDEN,
+    SELFIES,
+    BURSTS,
+    RAW
 }
 
 data class SalimAlbum(

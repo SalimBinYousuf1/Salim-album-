@@ -49,21 +49,36 @@ import java.util.*
 fun MediaViewerScreen(
     mediaList: List<MediaItem>,
     initialIndex: Int,
+    keepScreenOn: Boolean = false,
+    autoplayVideos: Boolean = false,
     onBack: () -> Unit,
     onToggleFavorite: (MediaItem) -> Unit,
     onShare: (MediaItem) -> Unit,
     onEdit: (MediaItem) -> Unit,
+    onEditVideo: (MediaItem) -> Unit,
     onDelete: (MediaItem) -> Unit,
     onShowDetails: (MediaItem) -> Unit,
     onSetWallpaper: (MediaItem) -> Unit,
     onSaveCopy: (MediaItem) -> Unit,
     onRename: (MediaItem) -> Unit,
     onAddToAlbum: (MediaItem) -> Unit,
-    onOpenWith: (MediaItem) -> Unit
+    onOpenWith: (MediaItem) -> Unit,
+    onHide: (MediaItem) -> Unit,
+    onBackupToGoogle: (MediaItem) -> Unit
 ) {
     if (mediaList.isEmpty()) {
         LaunchedEffect(Unit) { onBack() }
         return
+    }
+
+    val activity = LocalContext.current as? android.app.Activity
+    DisposableEffect(keepScreenOn) {
+        if (keepScreenOn) {
+            activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     val coroutineScope = rememberCoroutineScope()
@@ -211,6 +226,22 @@ fun MediaViewerScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("Back up to Google Photos") },
+                                leadingIcon = { Icon(Icons.Default.CloudUpload, contentDescription = null) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onBackupToGoogle(currentItem)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Hide") },
+                                leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onHide(currentItem)
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Open With…") },
                                 leadingIcon = { Icon(Icons.Default.OpenInNew, contentDescription = null) },
                                 onClick = {
@@ -310,18 +341,18 @@ fun MediaViewerScreen(
                         )
                     }
 
-                    // Edit (only for photos)
-                    if (!currentItem.isVideo) {
-                        IconButton(
-                            onClick = { onEdit(currentItem) },
-                            modifier = Modifier.testTag("viewer_edit_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = "Edit",
-                                tint = Color.White
-                            )
-                        }
+                    // Edit (for photos and videos)
+                    IconButton(
+                        onClick = {
+                            if (currentItem.isVideo) onEditVideo(currentItem) else onEdit(currentItem)
+                        },
+                        modifier = Modifier.testTag("viewer_edit_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Edit",
+                            tint = Color.White
+                        )
                     }
 
                     // Details / EXIF Info

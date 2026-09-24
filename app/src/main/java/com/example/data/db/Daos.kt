@@ -68,4 +68,30 @@ interface GalleryDao {
 
     @Query("DELETE FROM recent_views")
     suspend fun clearRecentViews()
+
+    // Trash (Recently Deleted)
+    @Query("SELECT * FROM trash ORDER BY trashedAt DESC")
+    fun getAllTrash(): Flow<List<TrashEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTrash(trash: TrashEntity)
+
+    @Query("DELETE FROM trash WHERE mediaId = :mediaId")
+    suspend fun deleteTrash(mediaId: Long)
+
+    @Query("DELETE FROM trash")
+    suspend fun clearTrash()
+
+    // Hidden Photos
+    @Query("SELECT mediaId FROM hidden ORDER BY hiddenAt DESC")
+    fun getAllHiddenIds(): Flow<List<Long>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertHidden(hidden: HiddenEntity)
+
+    @Query("DELETE FROM hidden WHERE mediaId = :mediaId")
+    suspend fun deleteHidden(mediaId: Long)
+
+    @Query("DELETE FROM hidden")
+    suspend fun clearHidden()
 }

@@ -38,14 +38,16 @@ import com.example.data.model.MediaItem
 import com.example.editor.AspectRatioPreset
 import com.example.editor.BitmapProcessor
 import com.example.editor.EditAdjustments
+import com.example.editor.PhotoFilterPreset
 import com.example.ui.theme.SalimBlue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class EditorTab {
-    CROP,
     ADJUST,
+    FILTERS,
+    CROP,
     ROTATE
 }
 
@@ -255,13 +257,14 @@ fun PhotoEditorScreen(
                     // Tool Details Row
                     when (activeTab) {
                         EditorTab.ADJUST -> {
-                            // Sub-chips for brightness, contrast, saturation, warmth, vignette
+                            // Sub-chips for brightness, contrast, saturation, warmth, exposure, vignette
                             LazyRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                             ) {
                                 val adjustOptions = listOf(
                                     "brightness" to "Brightness",
+                                    "exposure" to "Exposure",
                                     "contrast" to "Contrast",
                                     "saturation" to "Saturation",
                                     "warmth" to "Warmth",
@@ -287,6 +290,19 @@ fun PhotoEditorScreen(
                                         range = -80f..80f,
                                         onValueChange = {
                                             currentAdjustments = currentAdjustments.copy(brightness = it)
+                                        },
+                                        onValueChangeFinished = {
+                                            applyChange(currentAdjustments)
+                                        }
+                                    )
+                                }
+                                "exposure" -> {
+                                    SliderControl(
+                                        label = "Exposure",
+                                        value = currentAdjustments.exposure,
+                                        range = -50f..50f,
+                                        onValueChange = {
+                                            currentAdjustments = currentAdjustments.copy(exposure = it)
                                         },
                                         onValueChangeFinished = {
                                             applyChange(currentAdjustments)
@@ -343,6 +359,32 @@ fun PhotoEditorScreen(
                                         onValueChangeFinished = {
                                             applyChange(currentAdjustments)
                                         }
+                                    )
+                                }
+                            }
+                        }
+
+                        EditorTab.FILTERS -> {
+                            Text(
+                                text = "Photo Filters",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            ) {
+                                items(PhotoFilterPreset.values()) { preset ->
+                                    FilterChip(
+                                        selected = currentAdjustments.filter == preset,
+                                        onClick = {
+                                            applyChange(currentAdjustments.copy(filter = preset))
+                                        },
+                                        label = { Text(preset.label, fontSize = 13.sp) },
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.testTag("filter_chip_${preset.label.lowercase()}")
                                     )
                                 }
                             }
@@ -446,6 +488,13 @@ fun PhotoEditorScreen(
                             icon = Icons.Default.Tune,
                             isSelected = activeTab == EditorTab.ADJUST,
                             onClick = { activeTab = EditorTab.ADJUST }
+                        )
+
+                        EditorTabButton(
+                            label = "Filters",
+                            icon = Icons.Default.AutoAwesome,
+                            isSelected = activeTab == EditorTab.FILTERS,
+                            onClick = { activeTab = EditorTab.FILTERS }
                         )
 
                         EditorTabButton(

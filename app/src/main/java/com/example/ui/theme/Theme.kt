@@ -83,7 +83,14 @@ fun SalimTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+        typography = Typography
+    ) {
+        if (selectedTheme == SalimTheme.ASGL) {
+            com.example.ui.components.LiquidGlassSystem {
+                content()
+            }
+        } else {
+            content()
+        }
+    }
 }

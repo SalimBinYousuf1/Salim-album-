@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -35,8 +36,13 @@ fun SettingsScreen(
     settings: SalimSettings,
     mediaCount: Int,
     albumCount: Int,
+    trashCount: Int,
     preferencesManager: PreferencesManager,
-    onRescanLibrary: () -> Unit
+    onRescanLibrary: () -> Unit,
+    onOpenBackupDetail: () -> Unit,
+    onOpenCleanup: () -> Unit,
+    onOpenRecentlyDeleted: () -> Unit,
+    onOpenPasswordPrompt: () -> Unit
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -71,6 +77,171 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            // GOOGLE BACKUP SECTION
+            SettingsSectionHeader(title = "CLOUD BACKUP")
+            SettingsGroupCard {
+                SettingsNavRow(
+                    icon = Icons.Outlined.CloudSync,
+                    title = "Backup",
+                    subtitle = "Backup enabled. The service is provided by Google Photos.",
+                    trailingText = if (settings.isGoogleBackupEnabled) "On" else "Off",
+                    onClick = onOpenBackupDetail,
+                    tag = "setting_backup"
+                )
+            }
+
+            // VIEWING & PLAYBACK
+            SettingsSectionHeader(title = "VIEWING & PLAYBACK")
+            SettingsGroupCard {
+                // Autoplay videos
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.PlayCircle,
+                    label = "Autoplay videos",
+                    subtitle = "Videos are muted by default when autoplaying.",
+                    checked = settings.autoplayVideos,
+                    onCheckedChange = { preferencesManager.updateAutoplayVideos(it) },
+                    tag = "switch_autoplay_videos"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Live photo autoplay
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.MotionPhotosOn,
+                    label = "Live photo autoplay",
+                    checked = settings.livePhotoAutoplay,
+                    onCheckedChange = { preferencesManager.updateLivePhotoAutoplay(it) },
+                    tag = "switch_live_photo_autoplay"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Keep screen on
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.WbSunny,
+                    label = "Keep screen on while viewing",
+                    checked = settings.keepScreenOn,
+                    onCheckedChange = { preferencesManager.updateKeepScreenOn(it) },
+                    tag = "switch_keep_screen_on"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Auto rotate
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.ScreenRotation,
+                    label = "Auto-rotate when viewing photos",
+                    checked = settings.autoRotateViewing,
+                    onCheckedChange = { preferencesManager.updateAutoRotateViewing(it) },
+                    tag = "switch_auto_rotate"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Follow portrait
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.ScreenLockPortrait,
+                    label = "Follow Portrait screen lock",
+                    checked = settings.followPortraitScreenLock,
+                    onCheckedChange = { preferencesManager.updateFollowPortraitScreenLock(it) },
+                    tag = "switch_follow_portrait"
+                )
+            }
+
+            // ORGANIZATION & CLEANUP
+            SettingsSectionHeader(title = "ORGANIZATION & STORAGE")
+            SettingsGroupCard {
+                // Intelligent classification
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Category,
+                    label = "Intelligent classification",
+                    subtitle = "Automatically categorize selfies, panoramas, and large files.",
+                    checked = settings.intelligentClassification,
+                    onCheckedChange = { preferencesManager.updateIntelligentClassification(it) },
+                    tag = "switch_intelligent_classification"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Cleanup suggestions
+                SettingsNavRow(
+                    icon = Icons.Outlined.CleaningServices,
+                    title = "Cleanup suggestions",
+                    subtitle = "Find duplicates, large videos, and screenshots to free space.",
+                    trailingText = "Review",
+                    onClick = onOpenCleanup,
+                    tag = "setting_cleanup_suggestions"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Recently deleted
+                SettingsNavRow(
+                    icon = Icons.Outlined.DeleteSweep,
+                    title = "Recently deleted",
+                    subtitle = "Deleted images and videos will be displayed in \"Recently deleted\".",
+                    trailingText = if (trashCount > 0) "$trashCount items" else "Empty",
+                    onClick = onOpenRecentlyDeleted,
+                    tag = "setting_recently_deleted"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Save method after editing
+                SettingsRowWithPicker(
+                    icon = Icons.Outlined.Save,
+                    label = "Save method after editing",
+                    currentValue = settings.saveMethodAfterEditing.label
+                ) {
+                    var expanded by remember { mutableStateOf(false) }
+                    Box {
+                        TextButton(
+                            onClick = { expanded = true },
+                            modifier = Modifier.testTag("save_method_button")
+                        ) {
+                            Text(text = settings.saveMethodAfterEditing.label, color = SalimBlue)
+                        }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            SaveMethod.values().forEach { method ->
+                                DropdownMenuItem(
+                                    text = { Text(method.label) },
+                                    onClick = {
+                                        preferencesManager.updateSaveMethod(method)
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // PRIVACY & HIDDEN PHOTOS
+            SettingsSectionHeader(title = "PRIVACY & SECURITY")
+            SettingsGroupCard {
+                // Show hidden images
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Visibility,
+                    label = "Hidden photos",
+                    subtitle = "Show hidden images and videos in your album list.",
+                    checked = settings.showHiddenPhotos,
+                    onCheckedChange = { preferencesManager.updateShowHiddenPhotos(it) },
+                    tag = "switch_show_hidden_photos"
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+                // Password for hidden photos
+                SettingsNavRow(
+                    icon = Icons.Outlined.Lock,
+                    title = "Password for hidden photos",
+                    subtitle = if (settings.hiddenPhotosPassword != null) "PIN protection enabled" else "Set up a PIN to lock hidden album",
+                    trailingText = if (settings.hiddenPhotosPassword != null) "Change" else "Set PIN",
+                    onClick = onOpenPasswordPrompt,
+                    tag = "setting_hidden_password"
+                )
+            }
+
             // APPEARANCE SECTION
             SettingsSectionHeader(title = "APPEARANCE")
             SettingsGroupCard {
@@ -78,7 +249,7 @@ fun SettingsScreen(
                 SettingsRowWithPicker(
                     icon = Icons.Outlined.Palette,
                     label = "Theme",
-                    currentValue = settings.theme.name.lowercase().replaceFirstChar { it.uppercase() }
+                    currentValue = settings.theme.name
                 ) {
                     val themes = SalimTheme.values()
                     var expanded by remember { mutableStateOf(false) }
@@ -88,14 +259,24 @@ fun SettingsScreen(
                             modifier = Modifier.testTag("theme_selector_button")
                         ) {
                             Text(
-                                text = settings.theme.name.lowercase().replaceFirstChar { it.uppercase() },
+                                text = when (settings.theme) {
+                                    SalimTheme.ASGL -> "ASGL (Liquid Glass)"
+                                    else -> settings.theme.name.lowercase().replaceFirstChar { it.uppercase() }
+                                },
                                 color = SalimBlue
                             )
                         }
                         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                             themes.forEach { t ->
                                 DropdownMenuItem(
-                                    text = { Text(t.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                    text = {
+                                        Text(
+                                            when (t) {
+                                                SalimTheme.ASGL -> "ASGL (Liquid Glass)"
+                                                else -> t.name.lowercase().replaceFirstChar { it.uppercase() }
+                                            }
+                                        )
+                                    },
                                     onClick = {
                                         preferencesManager.updateTheme(t)
                                         expanded = false
@@ -200,7 +381,7 @@ fun SettingsScreen(
                 )
             }
 
-            // LIBRARY & ORGANIZATION
+            // LIBRARY & TIMELINE
             SettingsSectionHeader(title = "LIBRARY & TIMELINE")
             SettingsGroupCard {
                 // Grouping mode
@@ -230,28 +411,6 @@ fun SettingsScreen(
                         }
                     }
                 }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-
-                // Show Videos in photos tab
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Videocam,
-                    label = "Include Videos in Timeline",
-                    checked = settings.showVideos,
-                    onCheckedChange = { preferencesManager.updateShowVideos(it) },
-                    tag = "switch_show_videos"
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
-
-                // Show Screenshots
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Screenshot,
-                    label = "Include Screenshots",
-                    checked = settings.showScreenshots,
-                    onCheckedChange = { preferencesManager.updateShowScreenshots(it) },
-                    tag = "switch_show_screenshots"
-                )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 
@@ -300,17 +459,9 @@ fun SettingsScreen(
                 )
             }
 
-            // PRIVACY & ABOUT
-            SettingsSectionHeader(title = "PRIVACY & ABOUT")
+            // ABOUT
+            SettingsSectionHeader(title = "ABOUT")
             SettingsGroupCard {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Security,
-                    label = "Privacy & Local Data Statement",
-                    actionText = "Read",
-                    onClick = { showPrivacyDialog = true },
-                    tag = "action_privacy"
-                )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                 SettingsActionRow(
                     icon = Icons.Outlined.Info,
                     label = "About Salim",
@@ -320,43 +471,6 @@ fun SettingsScreen(
                 )
             }
         }
-    }
-
-    if (showPrivacyDialog) {
-        AlertDialog(
-            onDismissRequest = { showPrivacyDialog = false },
-            title = {
-                Text("Privacy & Storage", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "• Salim is completely local. Your photos, videos, and edits stay 100% on your device.",
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        "• MediaStore permissions are used solely to view and organize your local media files.",
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        "• No analytics, tracking, telemetry, or remote server connections exist.",
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        "• Album organization and favorites are stored locally in an on-device SQLite database.",
-                        fontSize = 14.sp
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { showPrivacyDialog = false },
-                    modifier = Modifier.testTag("privacy_dialog_close")
-                ) {
-                    Text("Done", color = SalimBlue)
-                }
-            }
-        )
     }
 
     if (showAboutDialog) {
@@ -415,9 +529,51 @@ fun SettingsGroupCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
+fun SettingsNavRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    trailingText: String? = null,
+    onClick: () -> Unit,
+    tag: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = SalimBlue, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(text = title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                if (subtitle != null) {
+                    Text(text = subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (trailingText != null) {
+                Text(text = trailingText, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Icon(imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
+@Composable
 fun SettingsSwitchRow(
     icon: ImageVector,
     label: String,
+    subtitle: String? = null,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     tag: String
@@ -429,10 +585,18 @@ fun SettingsSwitchRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Icon(imageVector = icon, contentDescription = null, tint = SalimBlue, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(12.dp))
-            Text(text = label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+            Column {
+                Text(text = label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+                if (subtitle != null) {
+                    Text(text = subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
         Switch(
             checked = checked,

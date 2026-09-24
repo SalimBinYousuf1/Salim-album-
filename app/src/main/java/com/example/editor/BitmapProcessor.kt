@@ -22,12 +22,24 @@ enum class AspectRatioPreset(val label: String, val ratio: Float?) {
     RATIO_9_16("9:16", 9f / 16f)
 }
 
+enum class PhotoFilterPreset(val label: String) {
+    ORIGINAL("Original"),
+    VIVID("Vivid"),
+    WARM("Warm"),
+    COOL("Cool"),
+    DRAMATIC("Dramatic"),
+    MONO("Mono"),
+    SILVERTONE("Silvertone")
+}
+
 data class EditAdjustments(
     val brightness: Float = 0f,    // -100 to 100, default 0
     val contrast: Float = 1f,      // 0.5 to 2.0, default 1.0
     val saturation: Float = 1f,    // 0.0 to 2.0, default 1.0
     val warmth: Float = 0f,        // -50 to 50, default 0
+    val exposure: Float = 0f,      // -50 to 50, default 0
     val vignette: Float = 0f,      // 0 to 100, default 0
+    val filter: PhotoFilterPreset = PhotoFilterPreset.ORIGINAL,
     val rotationAngle: Int = 0,    // 0, 90, 180, 270
     val flipHorizontal: Boolean = false,
     val flipVertical: Boolean = false,
@@ -133,14 +145,41 @@ object BitmapProcessor {
         // ColorMatrix: Brightness, Contrast, Saturation, Warmth
         val cm = ColorMatrix()
 
-        // Saturation
-        val satMatrix = ColorMatrix().apply { setSaturation(adjustments.saturation) }
+        // Contrast & Brightness & Exposure
+        // formula: v' = contrast * (v - 128) + 128 + brightness + exposure
+        var c = adjustments.contrast
+        var b = adjustments.brightness + (adjustments.exposure * 1.5f)
+        var s = adjustments.saturation
+
+        when (adjustments.filter) {
+            PhotoFilterPreset.ORIGINAL -> {}
+            PhotoFilterPreset.VIVID -> {
+                c *= 1.2f
+                s *= 1.35f
+            }
+            PhotoFilterPreset.WARM -> {
+                s *= 1.1f
+            }
+            PhotoFilterPreset.COOL -> {
+                s *= 1.05f
+            }
+            PhotoFilterPreset.DRAMATIC -> {
+                c *= 1.35f
+                s *= 0.85f
+            }
+            PhotoFilterPreset.MONO -> {
+                s = 0f
+            }
+            PhotoFilterPreset.SILVERTONE -> {
+                s = 0f
+                c *= 1.25f
+                b += 10f
+            }
+        }
+
+        val satMatrix = ColorMatrix().apply { setSaturation(s) }
         cm.postConcat(satMatrix)
 
-        // Contrast & Brightness
-        // formula: v' = contrast * (v - 128) + 128 + brightness
-        val c = adjustments.contrast
-        val b = adjustments.brightness
         val translate = (-0.5f * c + 0.5f) * 255f + b
 
         val contrastMatrix = ColorMatrix(
@@ -153,9 +192,13 @@ object BitmapProcessor {
         )
         cm.postConcat(contrastMatrix)
 
-        // Warmth: Warm boosts Red/Yellow, Cool boosts Blue
-        if (adjustments.warmth != 0f) {
-            val w = adjustments.warmth / 50f // -1 to 1
+        // Warmth
+        var netWarmth = adjustments.warmth
+        if (adjustments.filter == PhotoFilterPreset.WARM) netWarmth += 25f
+        if (adjustments.filter == PhotoFilterPreset.COOL) netWarmth -= 25f
+
+        if (netWarmth != 0f) {
+            val w = netWarmth / 50f
             val rBoost = if (w > 0) w * 25f else 0f
             val bBoost = if (w < 0) -w * 25f else 0f
             val warmthMatrix = ColorMatrix(
@@ -198,7 +241,8 @@ object BitmapProcessor {
         context: Context,
         sourceUri: Uri,
         adjustments: EditAdjustments,
-        baseName: String
+        baseName: String,
+        overwriteOriginal: Boolean = false
     ): Result<Uri> = withContext(Dispatchers.IO) {
         try {
             // Load full resolution
@@ -206,11 +250,22 @@ object BitmapProcessor {
                 ?: return@withContext Result.failure(Exception("Failed to load original full-resolution image"))
 
             val processed = applyEdits(fullBitmap, adjustments)
+            val contentResolver = context.contentResolver
+
+            if (overwriteOriginal) {
+                try {
+                    contentResolver.openOutputStream(sourceUri, "rwt")?.use { out ->
+                        processed.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                    }
+                    return@withContext Result.success(sourceUri)
+                } catch (e: Exception) {
+                    // Fall back to creating copy if overwrite is restricted by scoped storage
+                }
+            }
 
             val cleanName = baseName.substringBeforeLast('.')
             val fileName = "${cleanName}_edited_${System.currentTimeMillis()}.jpg"
 
-            val contentResolver = context.contentResolver
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")

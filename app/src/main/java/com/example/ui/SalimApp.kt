@@ -24,6 +24,7 @@ import com.example.ui.components.*
 import com.example.ui.screens.*
 import com.example.ui.theme.SalimTheme
 import com.example.ui.viewmodel.GalleryViewModel
+import com.example.util.BackupManager
 import com.example.util.MediaActions
 import kotlinx.coroutines.launch
 
@@ -48,12 +49,31 @@ fun SalimApp(
     val searchFilterType by viewModel.searchFilterType.collectAsStateWithLifecycle()
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
 
+    val trashedMedia by viewModel.trashedMedia.collectAsStateWithLifecycle()
+    val hiddenMedia by viewModel.hiddenMedia.collectAsStateWithLifecycle()
+    val cleanupSuggestions by viewModel.cleanupSuggestions.collectAsStateWithLifecycle()
+
     // Navigation and screen state
     var currentTab by remember { mutableStateOf(SalimTab.PHOTOS) }
     var selectedAlbum by remember { mutableStateOf<SalimAlbum?>(null) }
     var viewingMediaItem by remember { mutableStateOf<MediaItem?>(null) }
     var editingMediaItem by remember { mutableStateOf<MediaItem?>(null) }
+    var editingVideoItem by remember { mutableStateOf<MediaItem?>(null) }
+    var showCleanupScreen by remember { mutableStateOf(false) }
+    var showBackupDetailDialog by remember { mutableStateOf(false) }
+    var showPasswordPrompt by remember { mutableStateOf(false) }
+    var pendingHiddenUnlock by remember { mutableStateOf<(() -> Unit)?>(null) }
     var detailsExifData by remember { mutableStateOf<ExifData?>(null) }
+
+    // User album media cache
+    var userAlbumMedia by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    LaunchedEffect(selectedAlbum?.id, allFilteredMedia) {
+        if (selectedAlbum?.type == AlbumType.USER_CREATED) {
+            selectedAlbum?.rawId?.let { rId ->
+                userAlbumMedia = viewModel.getMediaForUserAlbum(rId)
+            }
+        }
+    }
 
     // Dialogs state
     var showCreateAlbumDialog by remember { mutableStateOf(false) }
@@ -122,10 +142,12 @@ fun SalimApp(
 
         // Handle Back Press
         BackHandler(
-            enabled = editingMediaItem != null || viewingMediaItem != null || selectedAlbum != null || isSelectionMode
+            enabled = editingMediaItem != null || editingVideoItem != null || showCleanupScreen || viewingMediaItem != null || selectedAlbum != null || isSelectionMode
         ) {
             when {
                 editingMediaItem != null -> editingMediaItem = null
+                editingVideoItem != null -> editingVideoItem = null
+                showCleanupScreen -> showCleanupScreen = false
                 viewingMediaItem != null -> viewingMediaItem = null
                 selectedAlbum != null -> selectedAlbum = null
                 isSelectionMode -> viewModel.clearSelection()
@@ -147,13 +169,12 @@ fun SalimApp(
                     AlbumType.LARGE_FILES -> allFilteredMedia.filter { it.isLargeFile }
                     AlbumType.RECENTLY_ADDED -> allFilteredMedia.take(100)
                     AlbumType.FOLDER -> allFilteredMedia.filter { it.bucketId == album.bucketId }
-                    AlbumType.USER_CREATED -> {
-                        val albumId = album.rawId ?: 0L
-                        // We will filter from user-album media IDs
-                        allFilteredMedia.filter { item ->
-                            viewModel.selectedIds.value.isEmpty() // reactive list
-                        }
-                    }
+                    AlbumType.USER_CREATED -> userAlbumMedia
+                    AlbumType.RECENTLY_DELETED -> trashedMedia
+                    AlbumType.HIDDEN -> hiddenMedia
+                    AlbumType.SELFIES -> allFilteredMedia.filter { it.isSelfie }
+                    AlbumType.BURSTS -> allFilteredMedia.filter { it.displayName.contains("burst", true) }
+                    AlbumType.RAW -> allFilteredMedia.filter { it.isRaw }
                 }
             }
             currentTab == SalimTab.FAVORITES -> allFilteredMedia.filter { it.isFavorite }
@@ -167,7 +188,7 @@ fun SalimApp(
         // Top-level Content
         Scaffold(
             topBar = {
-                if (isSelectionMode && viewingMediaItem == null && editingMediaItem == null) {
+                if (isSelectionMode && viewingMediaItem == null && editingMediaItem == null && editingVideoItem == null && !showCleanupScreen) {
                     SelectionTopBar(
                         selectedCount = selectedIds.size,
                         totalCount = activeMediaList.size,
@@ -196,7 +217,7 @@ fun SalimApp(
                 }
             },
             bottomBar = {
-                if (viewingMediaItem == null && editingMediaItem == null && !isSelectionMode) {
+                if (viewingMediaItem == null && editingMediaItem == null && editingVideoItem == null && !showCleanupScreen && !isSelectionMode) {
                     SalimBottomBar(
                         currentTab = currentTab,
                         onTabSelected = { tab ->
@@ -216,31 +237,10 @@ fun SalimApp(
                 if (selectedAlbum != null) {
                     // Album Detail Screen
                     val album = selectedAlbum!!
-                    val albumMedia = when (album.type) {
-                        AlbumType.ALL -> allFilteredMedia
-                        AlbumType.FAVORITES -> allFilteredMedia.filter { it.isFavorite }
-                        AlbumType.VIDEOS -> allFilteredMedia.filter { it.isVideo }
-                        AlbumType.SCREENSHOTS -> allFilteredMedia.filter { it.isScreenshot }
-                        AlbumType.CAMERA -> allFilteredMedia.filter { it.bucketDisplayName.contains("camera", true) || it.bucketDisplayName.contains("dcim", true) }
-                        AlbumType.DOWNLOADS -> allFilteredMedia.filter { it.bucketDisplayName.contains("download", true) }
-                        AlbumType.PANORAMAS -> allFilteredMedia.filter { it.isPanorama }
-                        AlbumType.LARGE_FILES -> allFilteredMedia.filter { it.isLargeFile }
-                        AlbumType.RECENTLY_ADDED -> allFilteredMedia.take(100)
-                        AlbumType.FOLDER -> allFilteredMedia.filter { it.bucketId == album.bucketId }
-                        AlbumType.USER_CREATED -> {
-                            var items by remember(album.id, allFilteredMedia) { mutableStateOf<List<MediaItem>>(emptyList()) }
-                            LaunchedEffect(album.id, allFilteredMedia) {
-                                album.rawId?.let { rId ->
-                                    items = viewModel.getMediaForUserAlbum(rId)
-                                }
-                            }
-                            items
-                        }
-                    }
 
                     AlbumDetailScreen(
                         album = album,
-                        media = albumMedia,
+                        media = activeMediaList,
                         settings = settings,
                         isSelectionMode = isSelectionMode,
                         selectedIds = selectedIds,
@@ -265,6 +265,32 @@ fun SalimApp(
                                 album.rawId?.let { viewModel.deleteAlbum(it) }
                                 selectedAlbum = null
                                 Toast.makeText(context, "Album deleted", Toast.LENGTH_SHORT).show()
+                            }
+                        } else null,
+                        onRestoreItems = if (album.type == AlbumType.RECENTLY_DELETED) {
+                            { items ->
+                                viewModel.restoreFromTrash(items)
+                                Toast.makeText(context, "Restored ${items.size} item(s)", Toast.LENGTH_SHORT).show()
+                            }
+                        } else null,
+                        onPermanentDeleteItems = if (album.type == AlbumType.RECENTLY_DELETED) {
+                            { items ->
+                                viewModel.permanentlyDelete(items) {
+                                    Toast.makeText(context, "Permanently deleted", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else null,
+                        onEmptyTrash = if (album.type == AlbumType.RECENTLY_DELETED) {
+                            {
+                                viewModel.emptyTrash {
+                                    Toast.makeText(context, "Trash emptied", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else null,
+                        onUnhideItems = if (album.type == AlbumType.HIDDEN) {
+                            { items ->
+                                viewModel.unhideMedia(items)
+                                Toast.makeText(context, "Unhidden ${items.size} item(s)", Toast.LENGTH_SHORT).show()
                             }
                         } else null
                     )
@@ -311,7 +337,14 @@ fun SalimApp(
                             AlbumsScreen(
                                 albums = albumsList,
                                 onCreateAlbumClick = { showCreateAlbumDialog = true },
-                                onAlbumClick = { album -> selectedAlbum = album }
+                                onAlbumClick = { album ->
+                                    if (album.type == AlbumType.HIDDEN && settings.hiddenPhotosPassword != null) {
+                                        pendingHiddenUnlock = { selectedAlbum = album }
+                                        showPasswordPrompt = true
+                                    } else {
+                                        selectedAlbum = album
+                                    }
+                                }
                             )
                         }
 
@@ -373,8 +406,15 @@ fun SalimApp(
                                 settings = settings,
                                 mediaCount = allFilteredMedia.size,
                                 albumCount = userAlbums.size,
+                                trashCount = trashedMedia.size,
                                 preferencesManager = viewModel.preferencesManager,
-                                onRescanLibrary = { viewModel.refreshLibrary() }
+                                onRescanLibrary = { viewModel.refreshLibrary() },
+                                onOpenBackupDetail = { showBackupDetailDialog = true },
+                                onOpenCleanup = { showCleanupScreen = true },
+                                onOpenRecentlyDeleted = {
+                                    selectedAlbum = albumsList.firstOrNull { it.type == AlbumType.RECENTLY_DELETED }
+                                },
+                                onOpenPasswordPrompt = { showPasswordPrompt = true }
                             )
                         }
                     }
@@ -390,10 +430,13 @@ fun SalimApp(
             MediaViewerScreen(
                 mediaList = fullList,
                 initialIndex = initialIdx,
+                keepScreenOn = settings.keepScreenOn,
+                autoplayVideos = settings.autoplayVideos,
                 onBack = { viewingMediaItem = null },
                 onToggleFavorite = { item -> viewModel.toggleFavorite(item) },
                 onShare = { item -> MediaActions.shareSingleMedia(context, item) },
                 onEdit = { item -> editingMediaItem = item },
+                onEditVideo = { item -> editingVideoItem = item },
                 onDelete = { item -> deleteConfirmItems = listOf(item) },
                 onShowDetails = { item ->
                     coroutineScope.launch {
@@ -421,7 +464,15 @@ fun SalimApp(
                     viewModel.startSelection(item.id)
                     showAddToAlbumDialog = true
                 },
-                onOpenWith = { item -> MediaActions.openWithOtherApp(context, item) }
+                onOpenWith = { item -> MediaActions.openWithOtherApp(context, item) },
+                onHide = { item ->
+                    viewModel.hideMedia(listOf(item))
+                    viewingMediaItem = null
+                    Toast.makeText(context, "Moved to Hidden album", Toast.LENGTH_SHORT).show()
+                },
+                onBackupToGoogle = { item ->
+                    BackupManager.uploadItemToGooglePhotos(context, item)
+                }
             )
         }
 
@@ -433,6 +484,80 @@ fun SalimApp(
                 onSaveSuccess = { _ ->
                     editingMediaItem = null
                     viewModel.refreshLibrary()
+                }
+            )
+        }
+
+        // Video Editor Overlay
+        if (editingVideoItem != null) {
+            VideoEditorScreen(
+                item = editingVideoItem!!,
+                onCancel = { editingVideoItem = null },
+                onSaveSuccess = { _ ->
+                    editingVideoItem = null
+                    viewModel.refreshLibrary()
+                    Toast.makeText(context, "Trimmed video saved", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
+
+        // Cleanup Suggestions Screen Overlay
+        if (showCleanupScreen) {
+            CleanupScreen(
+                candidates = cleanupSuggestions,
+                onBack = { showCleanupScreen = false },
+                onCleanItems = { items ->
+                    viewModel.deleteMedia(items) {
+                        Toast.makeText(context, "Cleaned up ${items.size} item(s)", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+        }
+
+        // Backup Detail Dialog
+        if (showBackupDetailDialog) {
+            BackupDetailDialog(
+                isEnabled = settings.googlePhotosBackupEnabled,
+                isWifiOnly = settings.backupWifiOnly,
+                totalItemsCount = allFilteredMedia.size,
+                onToggleEnabled = { enabled ->
+                    coroutineScope.launch { viewModel.preferencesManager.updateGooglePhotosBackup(enabled) }
+                },
+                onToggleWifiOnly = { wifiOnly ->
+                    coroutineScope.launch { viewModel.preferencesManager.updateBackupWifiOnly(wifiOnly) }
+                },
+                onBackupNow = {
+                    BackupManager.uploadBatchToGooglePhotos(context, allFilteredMedia)
+                },
+                onOpenGooglePhotos = {
+                    BackupManager.openGooglePhotos(context)
+                },
+                onDismiss = { showBackupDetailDialog = false }
+            )
+        }
+
+        // Hidden Vault Auth Dialog
+        if (showPasswordPrompt) {
+            HiddenVaultAuthDialog(
+                hasExistingPassword = settings.hiddenPhotosPassword != null,
+                correctPassword = settings.hiddenPhotosPassword,
+                onDismiss = {
+                    showPasswordPrompt = false
+                    pendingHiddenUnlock = null
+                },
+                onSuccess = {
+                    showPasswordPrompt = false
+                    pendingHiddenUnlock?.invoke()
+                    pendingHiddenUnlock = null
+                },
+                onSetNewPassword = { pin ->
+                    coroutineScope.launch {
+                        viewModel.preferencesManager.setHiddenPassword(pin)
+                        Toast.makeText(context, "PIN updated successfully", Toast.LENGTH_SHORT).show()
+                    }
+                    showPasswordPrompt = false
+                    pendingHiddenUnlock?.invoke()
+                    pendingHiddenUnlock = null
                 }
             )
         }

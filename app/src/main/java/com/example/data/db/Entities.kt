@@ -29,3 +29,15 @@ data class RecentViewEntity(
     @PrimaryKey val mediaId: Long,
     val viewedAt: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "trash")
+data class TrashEntity(
+    @PrimaryKey val mediaId: Long,
+    val trashedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "hidden")
+data class HiddenEntity(
+    @PrimaryKey val mediaId: Long,
+    val hiddenAt: Long = System.currentTimeMillis()
+)

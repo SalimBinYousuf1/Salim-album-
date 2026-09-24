@@ -52,6 +52,35 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     val favoriteIds: StateFlow<List<Long>> = repository.favoriteIds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // Trash and Hidden from Room
+    val trashItems = repository.trashItems
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val hiddenIds: StateFlow<List<Long>> = repository.hiddenIds
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Trashed Media
+    val trashedMedia: StateFlow<List<MediaItem>> = combine(
+        _allMedia,
+        trashItems
+    ) { media, trashList ->
+        val trashMap = trashList.associateBy({ it.mediaId }, { it.trashedAt })
+        media.filter { trashMap.containsKey(it.id) }.map {
+            it.copy(trashedAt = trashMap[it.id])
+        }.sortedByDescending { it.trashedAt ?: 0L }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Hidden Media
+    val hiddenMedia: StateFlow<List<MediaItem>> = combine(
+        _allMedia,
+        hiddenIds
+    ) { media, hiddenList ->
+        val hiddenSet = hiddenList.toSet()
+        media.filter { hiddenSet.contains(it.id) }.map {
+            it.copy(isHidden = true)
+        }.sortedByDescending { it.dateTaken }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private var searchJob: Job? = null
 
     init {
@@ -88,12 +117,23 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     val filteredMedia: StateFlow<List<MediaItem>> = combine(
         _allMedia,
         settings,
-        favoriteIds
-    ) { media, currentSettings, favIds ->
+        favoriteIds,
+        trashItems,
+        hiddenIds
+    ) { media, currentSettings, favIds, trashList, hiddenList ->
         val favSet = favIds.toSet()
+        val trashSet = trashList.map { it.mediaId }.toSet()
+        val hiddenSet = hiddenList.toSet()
+
         var list = media.map { item ->
-            item.copy(isFavorite = favSet.contains(item.id))
+            item.copy(
+                isFavorite = favSet.contains(item.id),
+                isHidden = hiddenSet.contains(item.id)
+            )
         }
+
+        // Exclude trashed and hidden items from main library timeline
+        list = list.filter { !trashSet.contains(it.id) && !hiddenSet.contains(it.id) }
 
         if (!currentSettings.showVideos) {
             list = list.filter { !it.isVideo }
@@ -146,11 +186,32 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // Cleanup suggestions
+    val cleanupSuggestions: StateFlow<CleanupCandidates> = filteredMedia.map { media ->
+        val dupes = media.groupBy { "${it.size}_${it.width}_${it.height}" }
+            .filter { it.value.size > 1 }
+            .flatMap { it.value.drop(1) }
+
+        val large = media.filter { it.size > 50 * 1024 * 1024L }
+        val screenshots = media.filter { it.isScreenshot }
+        val totalBytes = dupes.sumOf { it.size } + large.sumOf { it.size }
+
+        CleanupCandidates(
+            duplicates = dupes,
+            largeFiles = large,
+            oldScreenshots = screenshots,
+            totalCleanableBytes = totalBytes
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CleanupCandidates())
+
     // Built-in Albums & Smart Folders
     val albumsList: StateFlow<List<SalimAlbum>> = combine(
         filteredMedia,
-        userAlbums
-    ) { media, customAlbums ->
+        userAlbums,
+        trashedMedia,
+        hiddenMedia,
+        settings
+    ) { media, customAlbums, trashed, hidden, curSettings ->
         val result = mutableListOf<SalimAlbum>()
 
         // 1. All Photos & Videos
@@ -205,7 +266,23 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 5. Camera
+        // 5. Intelligent classification: Selfies
+        if (curSettings.intelligentClassification) {
+            val selfieItems = media.filter { it.isSelfie }
+            if (selfieItems.isNotEmpty()) {
+                result.add(
+                    SalimAlbum(
+                        id = "selfies",
+                        title = "Selfies",
+                        count = selfieItems.size,
+                        coverUri = selfieItems.firstOrNull()?.uri,
+                        type = AlbumType.SELFIES
+                    )
+                )
+            }
+        }
+
+        // 6. Camera
         val cameraItems = media.filter { it.bucketDisplayName.contains("camera", ignoreCase = true) || it.bucketDisplayName.contains("dcim", ignoreCase = true) }
         if (cameraItems.isNotEmpty()) {
             result.add(
@@ -219,7 +296,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 6. Downloads
+        // 7. Downloads
         val downloadItems = media.filter { it.bucketDisplayName.contains("download", ignoreCase = true) }
         if (downloadItems.isNotEmpty()) {
             result.add(
@@ -233,7 +310,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 7. Panoramas
+        // 8. Panoramas
         val panoramaItems = media.filter { it.isPanorama }
         if (panoramaItems.isNotEmpty()) {
             result.add(
@@ -247,7 +324,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 8. Large Files (>25MB)
+        // 9. Large Files (>25MB)
         val largeFiles = media.filter { it.isLargeFile }
         if (largeFiles.isNotEmpty()) {
             result.add(
@@ -261,7 +338,45 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             )
         }
 
-        // 9. Distinct Folders (Buckets)
+        // 10. RAW Photos
+        val rawItems = media.filter { it.isRaw }
+        if (rawItems.isNotEmpty()) {
+            result.add(
+                SalimAlbum(
+                    id = "raw_photos",
+                    title = "RAW",
+                    count = rawItems.size,
+                    coverUri = rawItems.firstOrNull()?.uri,
+                    type = AlbumType.RAW
+                )
+            )
+        }
+
+        // 11. Hidden Photos
+        if (curSettings.showHiddenPhotos) {
+            result.add(
+                SalimAlbum(
+                    id = "hidden",
+                    title = "Hidden",
+                    count = hidden.size,
+                    coverUri = hidden.firstOrNull()?.uri,
+                    type = AlbumType.HIDDEN
+                )
+            )
+        }
+
+        // 12. Recently Deleted (Trash)
+        result.add(
+            SalimAlbum(
+                id = "trash",
+                title = "Recently Deleted",
+                count = trashed.size,
+                coverUri = trashed.firstOrNull()?.uri,
+                type = AlbumType.RECENTLY_DELETED
+            )
+        )
+
+        // 13. Distinct Folders (Buckets)
         val bucketMap = media.groupBy { it.bucketDisplayName }
         for ((bucketName, bucketList) in bucketMap) {
             if (bucketName.isNotEmpty() &&
@@ -284,7 +399,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 10. User Created Albums from Room
+        // 14. User Created Albums from Room
         for (custom in customAlbums) {
             val albumMediaIds = repository.getMediaIdsForAlbum(custom.id).toSet()
             val albumMedia = media.filter { albumMediaIds.contains(it.id) }
@@ -369,10 +484,23 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun deleteMedia(items: List<MediaItem>, onComplete: (Boolean) -> Unit) {
+    fun moveToTrash(items: List<MediaItem>) {
         viewModelScope.launch {
-            val uris = items.map { it.uri }
-            val result = repository.deleteMedia(uris)
+            items.forEach { repository.moveToTrash(it.id) }
+            clearSelection()
+        }
+    }
+
+    fun restoreFromTrash(items: List<MediaItem>) {
+        viewModelScope.launch {
+            items.forEach { repository.restoreFromTrash(it.id) }
+            clearSelection()
+        }
+    }
+
+    fun permanentlyDelete(items: List<MediaItem>, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.deleteMedia(items)
             if (result.isSuccess) {
                 val deletedIds = items.map { it.id }.toSet()
                 _allMedia.value = _allMedia.value.filter { !deletedIds.contains(it.id) }
@@ -382,6 +510,30 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 onComplete(false)
             }
         }
+    }
+
+    fun emptyTrash(onComplete: (Boolean) -> Unit) {
+        val items = trashedMedia.value
+        permanentlyDelete(items, onComplete)
+    }
+
+    fun hideMedia(items: List<MediaItem>) {
+        viewModelScope.launch {
+            items.forEach { repository.hideMedia(it.id) }
+            clearSelection()
+        }
+    }
+
+    fun unhideMedia(items: List<MediaItem>) {
+        viewModelScope.launch {
+            items.forEach { repository.unhideMedia(it.id) }
+            clearSelection()
+        }
+    }
+
+    fun deleteMedia(items: List<MediaItem>, onComplete: (Boolean) -> Unit) {
+        moveToTrash(items)
+        onComplete(true)
     }
 
     fun renameMedia(item: MediaItem, newName: String, onResult: (Boolean) -> Unit) {
@@ -503,3 +655,10 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
+
+data class CleanupCandidates(
+    val duplicates: List<MediaItem> = emptyList(),
+    val largeFiles: List<MediaItem> = emptyList(),
+    val oldScreenshots: List<MediaItem> = emptyList(),
+    val totalCleanableBytes: Long = 0L
+)

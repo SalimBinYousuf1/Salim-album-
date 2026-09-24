@@ -35,7 +35,11 @@ fun AlbumDetailScreen(
     onMediaLongClick: (MediaItem) -> Unit,
     onStartSelection: () -> Unit,
     onRenameAlbum: (() -> Unit)?,
-    onDeleteAlbum: (() -> Unit)?
+    onDeleteAlbum: (() -> Unit)?,
+    onRestoreItems: ((List<MediaItem>) -> Unit)? = null,
+    onPermanentDeleteItems: ((List<MediaItem>) -> Unit)? = null,
+    onEmptyTrash: (() -> Unit)? = null,
+    onUnhideItems: ((List<MediaItem>) -> Unit)? = null
 ) {
     var showMoreMenu by remember { mutableStateOf(false) }
 
@@ -51,7 +55,11 @@ fun AlbumDetailScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "${media.size} items",
+                                text = if (album.type == AlbumType.RECENTLY_DELETED) {
+                                    "${media.size} items • 30-day retention"
+                                } else {
+                                    "${media.size} items"
+                                },
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -66,6 +74,12 @@ fun AlbumDetailScreen(
                         }
                     },
                     actions = {
+                        if (album.type == AlbumType.RECENTLY_DELETED && media.isNotEmpty() && onEmptyTrash != null) {
+                            TextButton(onClick = onEmptyTrash) {
+                                Text("Empty", color = SalimRed, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
                         if (media.isNotEmpty()) {
                             TextButton(
                                 onClick = onStartSelection,

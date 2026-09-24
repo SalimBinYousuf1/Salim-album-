@@ -16,7 +16,9 @@ import com.example.data.db.AlbumEntity
 import com.example.data.db.AlbumMediaCrossRef
 import com.example.data.db.AppDatabase
 import com.example.data.db.FavoriteEntity
+import com.example.data.db.HiddenEntity
 import com.example.data.db.RecentViewEntity
+import com.example.data.db.TrashEntity
 import com.example.data.model.AlbumType
 import com.example.data.model.ExifData
 import com.example.data.model.MediaItem
@@ -41,6 +43,8 @@ class MediaStoreRepository(
 
     val favoriteIds: Flow<List<Long>> = galleryDao.getAllFavoriteIds()
     val userAlbums: Flow<List<AlbumEntity>> = galleryDao.getAllAlbums()
+    val trashItems: Flow<List<TrashEntity>> = galleryDao.getAllTrash()
+    val hiddenIds: Flow<List<Long>> = galleryDao.getAllHiddenIds()
 
     // Flow that emits when MediaStore changes
     fun observeMediaStore(): Flow<Unit> = callbackFlow {
@@ -304,8 +308,39 @@ class MediaStoreRepository(
         galleryDao.getMediaIdsForAlbumSync(albumId)
     }
 
+    // Trash & Hidden Operations
+    suspend fun moveToTrash(mediaId: Long) = withContext(Dispatchers.IO) {
+        galleryDao.insertTrash(TrashEntity(mediaId = mediaId))
+    }
+
+    suspend fun restoreFromTrash(mediaId: Long) = withContext(Dispatchers.IO) {
+        galleryDao.deleteTrash(mediaId)
+    }
+
+    suspend fun hideMedia(mediaId: Long) = withContext(Dispatchers.IO) {
+        galleryDao.insertHidden(HiddenEntity(mediaId = mediaId))
+    }
+
+    suspend fun unhideMedia(mediaId: Long) = withContext(Dispatchers.IO) {
+        galleryDao.deleteHidden(mediaId)
+    }
+
     // Real File Operations
-    suspend fun deleteMedia(uris: List<Uri>): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun deleteMedia(items: List<MediaItem>): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            for (item in items) {
+                contentResolver.delete(item.uri, null, null)
+                galleryDao.deleteTrash(item.id)
+                galleryDao.deleteFavorite(item.id)
+                galleryDao.deleteHidden(item.id)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteMediaUris(uris: List<Uri>): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             for (uri in uris) {
                 contentResolver.delete(uri, null, null)

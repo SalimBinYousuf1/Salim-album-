@@ -28,6 +28,11 @@ enum class GroupingMode(val label: String) {
     NONE("None")
 }
 
+enum class SaveMethod(val label: String) {
+    SAVE_AS_COPY("Save as new copy"),
+    OVERWRITE_ORIGINAL("Overwrite original")
+}
+
 data class SalimSettings(
     val theme: SalimTheme = SalimTheme.LIGHT,
     val columnCount: Int = 3,
@@ -39,8 +44,23 @@ data class SalimSettings(
     val groupingMode: GroupingMode = GroupingMode.DAY,
     val showVideos: Boolean = true,
     val showScreenshots: Boolean = true,
-    val animationsEnabled: Boolean = true
-)
+    val animationsEnabled: Boolean = true,
+    val isGoogleBackupEnabled: Boolean = true,
+    val backupOverWifiOnly: Boolean = true,
+    val autoplayVideos: Boolean = false,
+    val livePhotoAutoplay: Boolean = true,
+    val intelligentClassification: Boolean = true,
+    val cleanupSuggestionsEnabled: Boolean = true,
+    val saveMethodAfterEditing: SaveMethod = SaveMethod.SAVE_AS_COPY,
+    val keepScreenOn: Boolean = false,
+    val autoRotateViewing: Boolean = false,
+    val followPortraitScreenLock: Boolean = true,
+    val showHiddenPhotos: Boolean = false,
+    val hiddenPhotosPassword: String? = null
+) {
+    val googlePhotosBackupEnabled: Boolean get() = isGoogleBackupEnabled
+    val backupWifiOnly: Boolean get() = backupOverWifiOnly
+}
 
 class PreferencesManager(context: Context) {
     private val prefs: SharedPreferences =
@@ -59,6 +79,9 @@ class PreferencesManager(context: Context) {
         val groupStr = prefs.getString("groupingMode", GroupingMode.DAY.name) ?: GroupingMode.DAY.name
         val groupingMode = try { GroupingMode.valueOf(groupStr) } catch (e: Exception) { GroupingMode.DAY }
 
+        val saveStr = prefs.getString("saveMethod", SaveMethod.SAVE_AS_COPY.name) ?: SaveMethod.SAVE_AS_COPY.name
+        val saveMethod = try { SaveMethod.valueOf(saveStr) } catch (e: Exception) { SaveMethod.SAVE_AS_COPY }
+
         return SalimSettings(
             theme = theme,
             columnCount = prefs.getInt("columnCount", 3),
@@ -70,7 +93,19 @@ class PreferencesManager(context: Context) {
             groupingMode = groupingMode,
             showVideos = prefs.getBoolean("showVideos", true),
             showScreenshots = prefs.getBoolean("showScreenshots", true),
-            animationsEnabled = prefs.getBoolean("animationsEnabled", true)
+            animationsEnabled = prefs.getBoolean("animationsEnabled", true),
+            isGoogleBackupEnabled = prefs.getBoolean("isGoogleBackupEnabled", true),
+            backupOverWifiOnly = prefs.getBoolean("backupOverWifiOnly", true),
+            autoplayVideos = prefs.getBoolean("autoplayVideos", false),
+            livePhotoAutoplay = prefs.getBoolean("livePhotoAutoplay", true),
+            intelligentClassification = prefs.getBoolean("intelligentClassification", true),
+            cleanupSuggestionsEnabled = prefs.getBoolean("cleanupSuggestionsEnabled", true),
+            saveMethodAfterEditing = saveMethod,
+            keepScreenOn = prefs.getBoolean("keepScreenOn", false),
+            autoRotateViewing = prefs.getBoolean("autoRotateViewing", false),
+            followPortraitScreenLock = prefs.getBoolean("followPortraitScreenLock", true),
+            showHiddenPhotos = prefs.getBoolean("showHiddenPhotos", false),
+            hiddenPhotosPassword = prefs.getString("hiddenPhotosPassword", null)
         )
     }
 
@@ -129,4 +164,68 @@ class PreferencesManager(context: Context) {
         prefs.edit().putBoolean("animationsEnabled", enabled).apply()
         _settings.value = _settings.value.copy(animationsEnabled = enabled)
     }
+
+    fun updateGoogleBackupEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("isGoogleBackupEnabled", enabled).apply()
+        _settings.value = _settings.value.copy(isGoogleBackupEnabled = enabled)
+    }
+
+    fun updateBackupOverWifiOnly(wifiOnly: Boolean) {
+        prefs.edit().putBoolean("backupOverWifiOnly", wifiOnly).apply()
+        _settings.value = _settings.value.copy(backupOverWifiOnly = wifiOnly)
+    }
+
+    fun updateAutoplayVideos(autoplay: Boolean) {
+        prefs.edit().putBoolean("autoplayVideos", autoplay).apply()
+        _settings.value = _settings.value.copy(autoplayVideos = autoplay)
+    }
+
+    fun updateLivePhotoAutoplay(enabled: Boolean) {
+        prefs.edit().putBoolean("livePhotoAutoplay", enabled).apply()
+        _settings.value = _settings.value.copy(livePhotoAutoplay = enabled)
+    }
+
+    fun updateIntelligentClassification(enabled: Boolean) {
+        prefs.edit().putBoolean("intelligentClassification", enabled).apply()
+        _settings.value = _settings.value.copy(intelligentClassification = enabled)
+    }
+
+    fun updateCleanupSuggestionsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("cleanupSuggestionsEnabled", enabled).apply()
+        _settings.value = _settings.value.copy(cleanupSuggestionsEnabled = enabled)
+    }
+
+    fun updateSaveMethod(method: SaveMethod) {
+        prefs.edit().putString("saveMethod", method.name).apply()
+        _settings.value = _settings.value.copy(saveMethodAfterEditing = method)
+    }
+
+    fun updateKeepScreenOn(keepOn: Boolean) {
+        prefs.edit().putBoolean("keepScreenOn", keepOn).apply()
+        _settings.value = _settings.value.copy(keepScreenOn = keepOn)
+    }
+
+    fun updateAutoRotateViewing(autoRotate: Boolean) {
+        prefs.edit().putBoolean("autoRotateViewing", autoRotate).apply()
+        _settings.value = _settings.value.copy(autoRotateViewing = autoRotate)
+    }
+
+    fun updateFollowPortraitScreenLock(follow: Boolean) {
+        prefs.edit().putBoolean("followPortraitScreenLock", follow).apply()
+        _settings.value = _settings.value.copy(followPortraitScreenLock = follow)
+    }
+
+    fun updateShowHiddenPhotos(show: Boolean) {
+        prefs.edit().putBoolean("showHiddenPhotos", show).apply()
+        _settings.value = _settings.value.copy(showHiddenPhotos = show)
+    }
+
+    fun updateHiddenPhotosPassword(password: String?) {
+        prefs.edit().putString("hiddenPhotosPassword", password).apply()
+        _settings.value = _settings.value.copy(hiddenPhotosPassword = password)
+    }
+
+    fun updateGooglePhotosBackup(enabled: Boolean) = updateGoogleBackupEnabled(enabled)
+    fun updateBackupWifiOnly(wifiOnly: Boolean) = updateBackupOverWifiOnly(wifiOnly)
+    fun setHiddenPassword(password: String?) = updateHiddenPhotosPassword(password)
 }
